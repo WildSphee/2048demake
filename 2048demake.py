@@ -3,29 +3,38 @@ import time
 import random
 import numpy as np
 
+# customizable features
 colors = {0: '', 2: '#eee4da', 4: '#eee1c9', 8: '#f3b27a', 16: '#f69664', 32: '#f67f5f',
-          64: '#f75f3b', 128: "#edd073", 256: "#edcc62", 512: "#edc850", "1": "#dacaba", "2": "#e2d3c3"}
+          64: '#f75f3b', 128: "#edd073", 256: "#edcc62", 512: "#edc850", 1024:'#f5e6bc',
+          2048:"#dff7d0", "1": "#dacaba", "2": "#e2d3c3"}
+
+itemlist = [("GenBlocker", [(Circle(Point(0, 0), 8), 'blue')]),
+            ("TileDoubler", [(Circle(Point(0, 0), 8), 'red'), (Text(Point(0, 0), text='II'), 'white')]),
+            ("4Haters", [(Circle(Point(0, 0), 8), 'green')]),
+            ]
 
 
-def help():
+def helpwin():
     try:
         win_help = ButWin(title="Help", width=350, height=400)
         win_help.setBackground("#fcf5eb")
-        win_help.createtxt(Point(145, 160), """
+        win_help.createtxt(Point(145, 180), """
         2048 is a game of strategy
         Simply click the four directions
-        Try to not block your tiles while
+        And combine tiles of the same values
         gathering as much points as possible
         This game comes with a twist of items
-        They will spawn once every 3 turns~
+        with a 20% chance to spawn per turn~
         Utilize them wisely!
         
-        Powerups:
-        SpawnBlockers - blocks new tilespawns
-        for 3 turns
+        Items:
+        GenBlockers - stops new tile spawning
+        for 2 turns
         
         TileDoubler - double the value of 2 
         random tiles in the grid 
+        
+        4Haters - remove all 4s from the grid
         
         
         Click window to go back:
@@ -36,10 +45,6 @@ def help():
 
     except GraphicsError:
         pass
-
-def quit():
-    print('exiting')
-    sys.exit()
 
 
 class ButWin(GraphWin):
@@ -85,6 +90,7 @@ class ButWin(GraphWin):
             if k[0].x < click.x < k[1].x and k[0].y < click.y < k[1].y:
                 eval(v)
 
+
 class Tile(Rectangle):
     def __init__(self, *args, v=0, win, textloc, nocolor=False, **kwargs):
         self.nocolor = nocolor
@@ -107,6 +113,7 @@ class Tile(Rectangle):
     def bmove(self, dx, dy):
         self.move(dx, dy)
         self.numdisplay.move(dx, dy)
+
 
 class Board:
     def __init__(self):
@@ -146,22 +153,37 @@ class Board:
             for c in r:
                 c.changev(v)
 
-# item logic, as there are only so few im not making subclasses
-class item:
-    def __init__(self, win, name: str, position: Point):
-        self.logo = []
-        self.name = name
-        self.win = win
-        self.blinker = Circle(position, 5)
-        
-    def draw(self) -> None:
-        for e in self.logo:
-            e.draw(self.win)
 
-    def blink(self, expand: bool=True):
-        self.blinker.draw(self.win)
-        self.blinker.radius = 3
-        pass
+# item logic, as there are only so few im not making subclasses
+class Item:
+    def __init__(self, win, itemID: int, position: Point):
+        self.icon = [(e[0].clone(), e[1]) for e in itemlist[itemID][1]]
+        self.position = position
+        self.name = itemlist[itemID][0]
+        self.win = win
+
+    def draw(self) -> None:
+        for e in self.icon:
+            poly, color = e
+            poly.setFill(color)
+            poly.move(self.position.x, self.position.y)
+            poly.draw(self.win)
+
+    def undraw(self) -> None:
+        for e in self.icon:
+            e[0].undraw()
+
+    def blink(self, expand=True):
+        cir = Circle(self.position, 30)
+        r = cir.radius if expand else cir.radius * 2.1
+
+        for i in range(5):
+            cir = Circle(self.position, r * (1 + (i * 0.1 if expand else -i * 0.1)))
+            cir.setOutline("#d4be81" if expand else "#94865f")
+            cir.setWidth(5)
+            cir.draw(self.win)
+            time.sleep(0.01)
+            cir.undraw()
 
 
 # handles logic, computation and game
@@ -169,7 +191,7 @@ class GameManager:
     def __init__(self, win):
         self.win = win
         self.score = 0
-        self.items = []
+        self.items = [None, None, None]
         self.board = Board()
         self.board.createBGGrid(win)
         self.grid = self.board.createGrid(win)
@@ -178,8 +200,11 @@ class GameManager:
         # animation, cart is a collector that executed all at once
         self.animcart = []
 
+        #items
+        self.genblocker = 0
+
     # input: grid -> list of values, change grid, (and play action)
-    def move(self, grid, transpose, rightToLeft):
+    def move(self, grid, transpose, rightToLeft) -> list:
         fgrid = []
         faction = []
         grid = np.transpose(grid).tolist() if transpose else grid
@@ -293,18 +318,25 @@ class GameManager:
         elif dir == "d":
             fgrid = self.move(valuegrid, False, False)
 
-        self.animAll(dir)
+        changed = self.animAll(dir)
 
         for r in range(4):
             for c in range(4):
                 self.grid[r][c].changev(fgrid[r][c])
 
-        self.genRandom()
+        if changed:
+            if self.genblocker > 0:
+                self.genblocker -= 1
+            else:
+                self.genRandom()
 
-    # func execute all in shopping cart
-    def animAll(self, dir):
+            self.spawnItem()
+
+
+    # func execute all in shopping cart, returns whether any animation executed
+    def animAll(self, dir) -> bool:
         if len(self.animcart) == 0:
-            return
+            return False
 
         dirx = 7.5 if dir == 'd' else 0
         dirx = -7.5 if dir == 'a' else dirx
@@ -324,21 +356,84 @@ class GameManager:
             tile, distance = anim
             tile.bmove(-dirx*distance*10, -diry*distance*10)
 
-
         self.animcart = []
+        return True
 
     # items, pickup, generate and how they function
-    def giveItem(self, item: int):
-        pass
-    
-    def useitem(self, item: int):
-        if item > len(self.items):
+    # item has a 20% chance to generate every turn
+    def spawnItem(self) -> bool:
+        # item spawn chance
+        if random.choice([i for i in range(1)]) != 0:
+            return False
+
+        for i, e in enumerate(self.items):
+            if e is None:
+                newitem = Item(self.win, itemID=random.randint(0, len(itemlist)-1),
+                               position=Point(212.5+(i*65), 512.5))
+                newitem.draw()
+                newitem.blink()
+                self.items[i] = newitem
+                break
+        else:
+            print('item bar full')
+            return False
+
+        return True
+
+    def item_genblocker(self):
+        self.genblocker += 2
+        return True
+
+    def item_tiledoubler(self):
+        pool = []
+        for r, re in enumerate(self.grid):
+            for ce in re:
+                if ce.value != 0:
+                    pool.append(ce)
+        if len(pool) < 2:
+            return False
+        target = random.sample(pool, 2)
+        for e in target:
+            e.changev(e.value*2)
+            self.score += e.value
+            scoretxt.setText(str(self.score))
+        return True
+
+    def item_4hater(self):
+        for r, re in enumerate(self.grid):
+            for ce in re:
+                if ce.value == 4:
+                    ce.changev(0)
+        return True
+
+    def useitem(self, id: int):
+        item = self.items[id]
+
+        if item == None:
             infotxt.setText(f'no item')
             time.sleep(0.5)
             infotxt.setText(f'item slots')
             return
-        infotxt.setText(f'get item{item} used')
-        time.sleep(0.5)
+
+        # allocate item to their functions
+        if item.name == "GenBlocker":
+            used = self.item_genblocker()
+        elif item.name == "TileDoubler":
+            used = self.item_tiledoubler()
+        elif item.name == "4Haters":
+            used = self.item_4hater()
+        else:
+            print('error, unknown item')
+
+        if used:
+            infotxt.setText(f'{item.name} used')
+            item.blink(expand=False)
+            item.undraw()
+            self.items[id] = None
+        else:
+            infotxt.setText(f'failed to use item')
+
+        time.sleep(0.8)
         infotxt.setText(f'item slots')
 
 
@@ -352,13 +447,13 @@ def main():
     gm = GameManager(win)
 
     # create buttons
-    win.createbut(Point(250, 75), Point(350, 100), action="help()", text="Help", color="#fff6e8")
+    win.createbut(Point(250, 75), Point(350, 100), action="helpwin()", text="Help", color="#fff6e8")
 
     global infotxt
     infotxt = win.createtxt(Point(275, 465), text="item slots:", color='grey', size=13)
-    win.createbut(Point(315, 485), Point(370, 540), action='gm.useitem(3)')
-    win.createbut(Point(250, 485), Point(305, 540), action='gm.useitem(2)')
-    win.createbut(Point(185, 485), Point(240, 540), action='gm.useitem(1)')
+    win.createbut(Point(315, 485), Point(370, 540), action='gm.useitem(2)')
+    win.createbut(Point(250, 485), Point(305, 540), action='gm.useitem(1)')
+    win.createbut(Point(185, 485), Point(240, 540), action='gm.useitem(0)')
 
     win.createbut(Point(65, 450), Point(125, 492.5), heavyshade=False, action='gm.getdir("w")')
     win.createbut(Point(65, 497.5), Point(125, 540), heavyshade=False, action='gm.getdir("s")')
@@ -376,10 +471,11 @@ def main():
     scoretxt = win.createtxt(Point(330, 40), text="0", color='#86553b', size=16)
 
     while True:
-        try:
-            win.checkButtonClick(win.getMouse())
-        except GraphicsError:
-            quit()
+        # try:
+        win.checkButtonClick(win.getMouse())
+        # except GraphicsError:
+        #     print('exiting')
+        #     sys.exit()
 
 if __name__ == '__main__':
     main()
