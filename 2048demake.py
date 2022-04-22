@@ -3,8 +3,8 @@ import time
 import random
 import numpy as np
 
-colors = {0: 'white', 2: '#fff7d9', 4: '#fff3c7', 8: '#edc78a', 16: '#e6b567', 32: '#cc7158'}
-defaulttxt = 'item slot'
+colors = {0: '', 2: '#eee4da', 4: '#eee1c9', 8: '#f3b27a', 16: '#f69664', 32: '#f67f5f',
+          64: '#f75f3b', 128: "#edd073", 256: "#edcc62", 512: "#edc850", "1": "#dacaba", "2": "#e2d3c3"}
 
 
 def help():
@@ -63,7 +63,7 @@ class ButWin(GraphWin):
         p.setOutline('white')
         p.draw(self)
 
-    def createbut(self, p1: Point, p2: Point, action: str, text=False, color='#ede0c5', heavyshade=True) -> Rectangle:
+    def createbut(self, p1: Point, p2: Point, action: str, text='', color='#ede0c5', heavyshade=True) -> Rectangle:
         rect2 = Rectangle(Point(p1.x+3, p1.y+3), Point(p2.x+3, p2.y+3))
         rect2.setOutline('grey' if heavyshade else '#bfbfbf')
         rect2.setFill("grey" if heavyshade else '#bfbfbf')
@@ -86,7 +86,8 @@ class ButWin(GraphWin):
                 eval(v)
 
 class Tile(Rectangle):
-    def __init__(self, *args, v=0, win, textloc, **kwargs):
+    def __init__(self, *args, v=0, win, textloc, nocolor=False, **kwargs):
+        self.nocolor = nocolor
         self.value = v
         self.win = win
         tx, ty = textloc
@@ -94,14 +95,18 @@ class Tile(Rectangle):
         super().__init__(*args, **kwargs)
 
     def display(self):
-        self.setFill(colors.get(self.value))
+        self.setFill(colors.get(self.value) if not self.nocolor else "#cdc1b4")
         self.draw(self.win)
         self.numdisplay.draw(self.win)
 
     def changev(self, v):
         self.value = v
-        self.numdisplay.setText(v if int(v) > 0 else '')
+        self.numdisplay.setText(v if v != 0 and type(v) == int else '')
         self.setFill(colors.get(v))
+
+    def bmove(self, dx, dy):
+        self.move(dx, dy)
+        self.numdisplay.move(dx, dy)
 
 class Board:
     def __init__(self):
@@ -110,7 +115,16 @@ class Board:
         self.offsety = 130
         self.bsize = 70     # box size
 
-    def createGrid(self, win=None, colored=True) -> list:
+    def createBGGrid(self, win=None) -> None:
+        for r in range(4):
+            for c in range(4):
+                disx, disy = self.offsetx + c * (self.bsize + self.bdis), self.offsety + r * (self.bsize + self.bdis)
+                tile = Tile(Point(disx, disy), Point(disx + self.bsize, disy + self.bsize), win=win,
+                            textloc=(disx+self.bsize/2, disy+self.bsize/2), nocolor=True)
+                tile.display()
+
+
+    def createGrid(self, win=None) -> list:
         grid = []
         for r in range(4):
             row = []
@@ -119,15 +133,12 @@ class Board:
                 tile = Tile(Point(disx, disy), Point(disx + self.bsize, disy + self.bsize), win=win,
                             textloc=(disx+self.bsize/2, disy+self.bsize/2))
                 tile.display()
-                # tile.draw(win)
                 row.append(tile)
             grid.append(row)
 
-        grid[0][1].changev(2)
-        grid[3][2].changev(4)
-        grid[2][3].changev(8)
-        grid[2][0].changev(16)
-        grid[1][3].changev(32)
+        for i in [4, 2]:
+            grid[random.randint(0, 3)][random.randint(0, 3)].changev(i)
+
         return grid
 
     def updateGrid(self, grid, v) -> None:
@@ -135,21 +146,44 @@ class Board:
             for c in r:
                 c.changev(v)
 
+# item logic, as there are only so few im not making subclasses
+class item:
+    def __init__(self, win, name: str, position: Point):
+        self.logo = []
+        self.name = name
+        self.win = win
+        self.blinker = Circle(position, 5)
+        
+    def draw(self) -> None:
+        for e in self.logo:
+            e.draw(self.win)
+
+    def blink(self, expand: bool=True):
+        self.blinker.draw(self.win)
+        self.blinker.radius = 3
+        pass
+
+
 # handles logic, computation and game
 class GameManager:
     def __init__(self, win):
         self.win = win
+        self.score = 0
         self.items = []
         self.board = Board()
+        self.board.createBGGrid(win)
         self.grid = self.board.createGrid(win)
         self.lost = False
+
+        # animation, cart is a collector that executed all at once
+        self.animcart = []
 
     # input: grid -> list of values, change grid, (and play action)
     def move(self, grid, transpose, rightToLeft):
         fgrid = []
+        faction = []
         grid = np.transpose(grid).tolist() if transpose else grid
-        for f in grid:
-
+        for fi, f in enumerate(grid):
             if rightToLeft:
                 f.reverse()
 
@@ -160,7 +194,7 @@ class GameManager:
             for ri, e in enumerate(reversed(f)):
                 i = len(f) - ri - 1
 
-                if e == '0' or i > v:
+                if e == 0 or i > v:
                     continue
 
                 else:  # if the next one is the same as current
@@ -173,7 +207,7 @@ class GameManager:
                     while i - recur >= 0:  # start a recursion
                         checking = f[i - recur]
 
-                        if checking == '0':
+                        if checking == 0:
                             recur += 1
                         elif checking == e:  # if we find same number, append to action
                             actions.append((i - recur, lastempty))
@@ -188,13 +222,33 @@ class GameManager:
             for a in actions:
                 final[a[1]] += f[a[0]]
                 final[a[0]] -= f[a[0]]
+                # score increase
+                faction.append(((fi, a[0]), abs(a[0]-a[1])))
 
             final.reverse() if rightToLeft else ''
 
             fgrid.append(final)
-            # print(actions)
 
         fgrid = np.transpose(fgrid).tolist() if transpose else list(fgrid)
+
+        """animation, append it to animcart, honestly couldn't figure out up and down animation 
+        and i had to basically hard code it in the end. Not proud of this at all but it works"""
+        for a in faction:
+
+            # down animation
+            if transpose and not rightToLeft:
+                c, r = a[0]
+            else:
+                r, c = a[0]
+            distance = a[1]
+
+            # up animation
+            if transpose and rightToLeft:
+                c, r = a[0]
+                c = 3-c
+                r = 3-r
+
+            self.animcart.append((self.grid[r][3-c if rightToLeft else c], distance))
 
         return fgrid
 
@@ -211,43 +265,81 @@ class GameManager:
             return
 
         tile = random.choice(pool)
-        v = random.choice([2, 4])
+        v = random.choice([2, 2, 4])
+
+        # animation
+        tile.changev("1")
+        time.sleep(0.1)
+        tile.changev("2")
+        time.sleep(0.1)
         tile.changev(v)
+
+        self.score += v
+        scoretxt.setText(str(self.score))
 
     def lost(self):
         print('game lost')
 
     def getdir(self, dir):
         valuegrid = [[c.value for c in r] for r in self.grid]
-        print(valuegrid)
         fgrid = []
 
-        if dir == "up":
-            fgrid = self.move(self.grid, True, True)
-        elif dir == "down":
+        if dir == "w":
+            fgrid = self.move(valuegrid, True, True)
+        elif dir == "s":
             fgrid = self.move(valuegrid, True, False)
-        elif dir == "left":
+        elif dir == "a":
             fgrid = self.move(valuegrid, False, True)
-        elif dir == "right":
+        elif dir == "d":
             fgrid = self.move(valuegrid, False, False)
 
-        print(fgrid)
+        self.animAll(dir)
+
         for r in range(4):
             for c in range(4):
                 self.grid[r][c].changev(fgrid[r][c])
 
+        self.genRandom()
+
+    # func execute all in shopping cart
+    def animAll(self, dir):
+        if len(self.animcart) == 0:
+            return
+
+        dirx = 7.5 if dir == 'd' else 0
+        dirx = -7.5 if dir == 'a' else dirx
+        diry = -7.5 if dir == 'w' else 0
+        diry = 7.5 if dir == 's' else diry
+
+        for i in range(10):
+            for anim in self.animcart:
+                tile, distance = anim
+                tile.bmove(dirx*distance, diry*distance)
+            time.sleep(0.0001)
+
+        time.sleep(0.2)
+
+        # reset location
+        for anim in self.animcart:
+            tile, distance = anim
+            tile.bmove(-dirx*distance*10, -diry*distance*10)
 
 
+        self.animcart = []
 
+    # items, pickup, generate and how they function
+    def giveItem(self, item: int):
+        pass
+    
     def useitem(self, item: int):
         if item > len(self.items):
-            txt.setText(f'no item')
+            infotxt.setText(f'no item')
             time.sleep(0.5)
-            txt.setText(f'item slots')
+            infotxt.setText(f'item slots')
             return
-        txt.setText(f'get item{item} used')
+        infotxt.setText(f'get item{item} used')
         time.sleep(0.5)
-        txt.setText(f'item slots')
+        infotxt.setText(f'item slots')
 
 
 def main():
@@ -262,16 +354,16 @@ def main():
     # create buttons
     win.createbut(Point(250, 75), Point(350, 100), action="help()", text="Help", color="#fff6e8")
 
-    global txt
-    txt = win.createtxt(Point(275, 465), text="item slots:", color='grey', size=13) # txt above items for noti
+    global infotxt
+    infotxt = win.createtxt(Point(275, 465), text="item slots:", color='grey', size=13)
     win.createbut(Point(315, 485), Point(370, 540), action='gm.useitem(3)')
     win.createbut(Point(250, 485), Point(305, 540), action='gm.useitem(2)')
     win.createbut(Point(185, 485), Point(240, 540), action='gm.useitem(1)')
 
-    win.createbut(Point(65, 450), Point(125, 492.5), heavyshade=False, action='gm.genRandom()') # gm.getdir((0, 0.1))
-    win.createbut(Point(65, 497.5), Point(125, 540), heavyshade=False, action='gm.getdir("down")')
-    win.createbut(Point(25, 450), Point(60, 540), heavyshade=False, action='gm.getdir("left")')
-    win.createbut(Point(130, 450), Point(165, 540), heavyshade=False, action='gm.getdir("right")')
+    win.createbut(Point(65, 450), Point(125, 492.5), heavyshade=False, action='gm.getdir("w")')
+    win.createbut(Point(65, 497.5), Point(125, 540), heavyshade=False, action='gm.getdir("s")')
+    win.createbut(Point(25, 450), Point(60, 540), heavyshade=False, action='gm.getdir("a")')
+    win.createbut(Point(130, 450), Point(165, 540), heavyshade=False, action='gm.getdir("d")')
 
     # direction symbols
     win.createpoly(Point(82, 478), Point(108, 478), Point(95, 465))
@@ -279,7 +371,9 @@ def main():
     win.createpoly(Point(50, 505), Point(50, 485), Point(35, 495))
     win.createpoly(Point(140, 505), Point(140, 485), Point(155, 495))
     # score display
-    win.createtxt(Point(290, 40), text="score:", color='grey', size=13)
+    win.createtxt(Point(280, 40), text="score:", color='grey', size=12)
+    global scoretxt
+    scoretxt = win.createtxt(Point(330, 40), text="0", color='#86553b', size=16)
 
     while True:
         try:
