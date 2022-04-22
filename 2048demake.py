@@ -5,20 +5,23 @@ import numpy as np
 
 # customizable features
 colors = {0: '', 2: '#eee4da', 4: '#eee1c9', 8: '#f3b27a', 16: '#f69664', 32: '#f67f5f',
-          64: '#f75f3b', 128: "#edd073", 256: "#edcc62", 512: "#edc850", 1024:'#f5e6bc',
+          64: '#f75f3b', 128: "#edd073", 256: "#edcc62", 512: "#edc850", 1024: '#f5e6bc',
           2048:"#dff7d0", "1": "#dacaba", "2": "#e2d3c3"}
 
-itemlist = [("GenBlocker", [(Circle(Point(0, 0), 8), 'blue')]),
-            ("TileDoubler", [(Circle(Point(0, 0), 8), 'red'), (Text(Point(0, 0), text='II'), 'white')]),
-            ("4Haters", [(Circle(Point(0, 0), 8), 'green')]),
+itemlist = [("GenBlocker", [(Circle(Point(0, 0), 20), '#8d6bdb'), (Circle(Point(11, 0), 3), 'white'),
+                            (Circle(Point(-11, 0), 3), 'white'), (Circle(Point(0, 0), 3), 'white')]),
+            ("TileDoubler", [(Circle(Point(0, 0), 20), 'pink'), (Text(Point(0, 0), text='II'), 'white')]),
+            ("4Haters", [(Circle(Point(0, 0), 20), 'green'), (Polygon(Point(10, 15), Point(15, 10), Point(5, 0),
+            Point(15, -10), Point(10, -15), Point(0, -5), Point(-10, -15), Point(-15, -10), Point(-5, 0),
+            Point(-15, 10), Point(-10, 15), Point(0, 5)), 'white'), (Text(Point(0, 0), text='4'), 'orange')]),
             ]
 
 
 def helpwin():
     try:
-        win_help = ButWin(title="Help", width=350, height=400)
+        win_help = ButWin(title="Help", width=350, height=420)
         win_help.setBackground("#fcf5eb")
-        win_help.createtxt(Point(145, 180), """
+        win_help.createtxt(Point(145, 200), """
         2048 is a game of strategy
         Simply click the four directions
         And combine tiles of the same values
@@ -35,10 +38,22 @@ def helpwin():
         random tiles in the grid 
         
         4Haters - remove all 4s from the grid
-        
-        
+        \n\n\n\n\n
         Click window to go back:
         """, color='#261803', size=10)
+
+        for i, item in enumerate(itemlist):
+            for e in item[1]:
+                poly, color = e
+                poly = poly.clone()
+                poly.setFill(color)
+                if type(poly) == Text:
+                    poly.setFace('courier')
+                    poly.setStyle('bold')
+                    poly.setSize(22)
+                poly.move(120 + i*55, 320)
+                poly.draw(win_help)
+
 
         win_help.getMouse()
         win_help.close()
@@ -166,6 +181,11 @@ class Item:
         for e in self.icon:
             poly, color = e
             poly.setFill(color)
+            if type(poly) == Text:
+                poly.setFace('courier')
+                poly.setStyle('bold')
+                poly.setSize(22)
+
             poly.move(self.position.x, self.position.y)
             poly.draw(self.win)
 
@@ -363,7 +383,7 @@ class GameManager:
     # item has a 20% chance to generate every turn
     def spawnItem(self) -> bool:
         # item spawn chance
-        if random.choice([i for i in range(1)]) != 0:
+        if random.randint(0, 4) != 0:
             return False
 
         for i, e in enumerate(self.items):
@@ -466,16 +486,15 @@ def main():
     win.createpoly(Point(50, 505), Point(50, 485), Point(35, 495))
     win.createpoly(Point(140, 505), Point(140, 485), Point(155, 495))
     # score display
-    win.createtxt(Point(280, 40), text="score:", color='grey', size=12)
+    win.createtxt(Point(275, 40), text="score:", color='grey', size=12)
     global scoretxt
-    scoretxt = win.createtxt(Point(330, 40), text="0", color='#86553b', size=16)
+    scoretxt = win.createtxt(Point(340, 40), text="0", color='#86553b', size=18)
 
     while True:
-        # try:
-        win.checkButtonClick(win.getMouse())
-        # except GraphicsError:
-        #     print('exiting')
-        #     sys.exit()
+        try:
+            win.checkButtonClick(win.getMouse())
+        except GraphicsError:
+            sys.exit()
 
 if __name__ == '__main__':
     main()
