@@ -16,52 +16,7 @@ itemlist = [("GenBlocker", [(Circle(Point(0, 0), 20), '#8d6bdb'), (Circle(Point(
             Point(-15, 10), Point(-10, 15), Point(0, 5)), 'white'), (Text(Point(0, 0), text='4'), 'orange')]),
             ]
 
-
-def helpwin():
-    try:
-        win_help = ButWin(title="Help", width=350, height=420)
-        win_help.setBackground("#fcf5eb")
-        win_help.createtxt(Point(145, 200), """
-        2048 is a game of strategy
-        Simply click the four directions
-        And combine tiles of the same values
-        gathering as much points as possible
-        This game comes with a twist of items
-        with a 20% chance to spawn per turn~
-        Utilize them wisely!
-        
-        Items:
-        GenBlockers - stops new tile spawning
-        for 2 turns
-        
-        TileDoubler - double the value of 2 
-        random tiles in the grid 
-        
-        4Haters - remove all 4s from the grid
-        \n\n\n\n\n
-        Click window to go back:
-        """, color='#261803', size=10)
-
-        for i, item in enumerate(itemlist):
-            for e in item[1]:
-                poly, color = e
-                poly = poly.clone()
-                poly.setFill(color)
-                if type(poly) == Text:
-                    poly.setFace('courier')
-                    poly.setStyle('bold')
-                    poly.setSize(22)
-                poly.move(120 + i*55, 320)
-                poly.draw(win_help)
-
-
-        win_help.getMouse()
-        win_help.close()
-
-    except GraphicsError:
-        pass
-
-
+# a Graphwin subclass to create buttons
 class ButWin(GraphWin):
     def __init__(self, *args, **kwargs):
         self.buttons = {}
@@ -84,10 +39,10 @@ class ButWin(GraphWin):
         p.draw(self)
 
     def createbut(self, p1: Point, p2: Point, action: str, text='', color='#ede0c5', heavyshade=True) -> Rectangle:
-        rect2 = Rectangle(Point(p1.x+3, p1.y+3), Point(p2.x+3, p2.y+3))
-        rect2.setOutline('grey' if heavyshade else '#bfbfbf')
-        rect2.setFill("grey" if heavyshade else '#bfbfbf')
-        rect2.draw(self)
+        shade = Rectangle(Point(p1.x+3, p1.y+3), Point(p2.x+3, p2.y+3))
+        shade.setOutline('grey' if heavyshade else '#bfbfbf')
+        shade.setFill("grey" if heavyshade else '#bfbfbf')
+        shade.draw(self)
 
         rect = Rectangle(p1, p2)
         rect.setOutline("#6e4910")
@@ -145,7 +100,6 @@ class Board:
                             textloc=(disx+self.bsize/2, disy+self.bsize/2), nocolor=True)
                 tile.display()
 
-
     def createGrid(self, win=None) -> list:
         grid = []
         for r in range(4):
@@ -162,11 +116,6 @@ class Board:
             grid[random.randint(0, 3)][random.randint(0, 3)].changev(i)
 
         return grid
-
-    def updateGrid(self, grid, v) -> None:
-        for r in grid:
-            for c in r:
-                c.changev(v)
 
 
 # item logic, as there are only so few im not making subclasses
@@ -215,12 +164,12 @@ class GameManager:
         self.board = Board()
         self.board.createBGGrid(win)
         self.grid = self.board.createGrid(win)
-        self.lost = False
+        self.logging = Logging()
 
         # animation, cart is a collector that executed all at once
         self.animcart = []
-
         #items
+        self.itemslot_defaulttxt = 'item slots:'
         self.genblocker = 0
 
     # input: grid -> list of values, change grid, (and play action)
@@ -298,9 +247,6 @@ class GameManager:
         return fgrid
 
     def genRandom(self):
-        if self.lost:
-            return
-
         pool = []
         for r in self.grid:
             for c in r:
@@ -321,9 +267,6 @@ class GameManager:
 
         self.score += v
         scoretxt.setText(str(self.score))
-
-    def lost(self):
-        print('game lost')
 
     def getdir(self, dir):
         valuegrid = [[c.value for c in r] for r in self.grid]
@@ -351,6 +294,8 @@ class GameManager:
                 self.genRandom()
 
             self.spawnItem()
+            # logging
+            self.logging.writefile(valuegrid)
 
 
     # func execute all in shopping cart, returns whether any animation executed
@@ -393,9 +338,12 @@ class GameManager:
                 newitem.draw()
                 newitem.blink()
                 self.items[i] = newitem
+
                 break
         else:
-            print('item bar full')
+            self.itemslot_defaulttxt = 'item bar full'
+            infotxt.setText(self.itemslot_defaulttxt)
+
             return False
 
         return True
@@ -432,7 +380,7 @@ class GameManager:
         if item == None:
             infotxt.setText(f'no item')
             time.sleep(0.5)
-            infotxt.setText(f'item slots')
+            infotxt.setText(self.itemslot_defaulttxt)
             return
 
         # allocate item to their functions
@@ -442,19 +390,83 @@ class GameManager:
             used = self.item_tiledoubler()
         elif item.name == "4Haters":
             used = self.item_4hater()
-        else:
-            print('error, unknown item')
 
         if used:
             infotxt.setText(f'{item.name} used')
             item.blink(expand=False)
             item.undraw()
             self.items[id] = None
+
+            #logging
+            self.logging.writefile(f'{item.name} used\n')
         else:
             infotxt.setText(f'failed to use item')
 
         time.sleep(0.8)
-        infotxt.setText(f'item slots')
+        self.itemslot_defaulttxt = 'item slots:'
+        infotxt.setText(self.itemslot_defaulttxt)
+
+# logging and exporting game results
+class Logging:
+    def __init__(self):
+        recordname = time.localtime()
+        print(recordname)
+        self.file = open(f"log{recordname.tm_hour}{recordname.tm_min!s}.txt", 'w')
+
+    def writefile(self, var):
+        if type(var) == list:
+            for e in var:
+                self.file.write(f'{str(e)}\n')
+            self.file.write('\n')
+        else:
+            self.file.write(str(var))
+
+    def closefile(self):
+        self.file.close()
+
+
+def helpwin():
+    try:
+        win_help = ButWin(title="Help", width=350, height=420)
+        win_help.setBackground("#fcf5eb")
+        win_help.createtxt(Point(145, 200), """
+        2048 is a game of strategy
+        Simply click the four directions
+        And combine tiles of the same values
+        gathering as much points as possible
+        This game comes with a twist of items
+        with a 20% chance to spawn per turn~
+        Utilize them wisely!
+
+        Items:
+        GenBlockers - stops new tile spawning
+        for 2 turns
+
+        TileDoubler - double the value of 2 
+        random tiles in the grid 
+
+        4Haters - remove ALL 4s from the grid
+        \n\n\n\n\n
+        Click window to go back:
+        """, color='#261803', size=10)
+
+        for i, item in enumerate(itemlist):
+            for e in item[1]:
+                poly, color = e
+                poly = poly.clone()
+                poly.setFill(color)
+                if type(poly) == Text:
+                    poly.setFace('courier')
+                    poly.setStyle('bold')
+                    poly.setSize(22)
+                poly.move(120 + i * 55, 320)
+                poly.draw(win_help)
+
+        win_help.getMouse()
+        win_help.close()
+
+    except GraphicsError:
+        pass
 
 
 def main():
@@ -490,10 +502,15 @@ def main():
     global scoretxt
     scoretxt = win.createtxt(Point(340, 40), text="0", color='#86553b', size=18)
 
+    print("The entire game is run on the window, terminal is NOT needed!\n"
+          "Press the 'help' button on top right for more information")
+
     while True:
         try:
             win.checkButtonClick(win.getMouse())
         except GraphicsError:
+            gm.logging.writefile(f'final score:{gm.score}')
+            gm.logging.closefile()
             sys.exit()
 
 if __name__ == '__main__':
